@@ -3,11 +3,13 @@
 # ============================================================
 import pytesseract  # Bibliothèque qui utilise Tesseract OCR pour extraire du texte d'images
 from PIL import Image  # Pillow : bibliothèque pour manipuler les images (ouvrir, rogner, etc.)
-
+import platform
 # Indique à pytesseract où trouver le programme Tesseract sur ton ordi
-pytesseract.pytesseract.tesseract_cmd = (
-    r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-)
+if platform.system() == "Windows":
+    pytesseract.pytesseract.tesseract_cmd = (
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    )
+
 
 # ============================================================
 # FONCTION PRINCIPALE : ANALYSER UN COMBAT
