@@ -1,83 +1,102 @@
+"""
+Module d'analyse OCR des combats Dofus.
+
+Ce module utilise Tesseract OCR (via pytesseract) et Pillow pour extraire
+les noms des joueurs gagnants et perdants à partir de screenshots de fin
+de combat dans le jeu Dofus.
+
+Fonction principale :
+    analyser_combat() — Analyse 1 ou 2 screenshots et retourne les résultats.
+"""
+
 # ============================================================
-# IMPORTATIONS ET CONFIGURATION
+# IMPORTATIONS DE MODULES STANDARD ET EXTERNES
 # ============================================================
-import pytesseract  # Bibliothèque qui utilise Tesseract OCR pour extraire du texte d'images
-from PIL import Image  # Pillow : bibliothèque pour manipuler les images (ouvrir, rogner, etc.)
 import platform
-# Indique à pytesseract où trouver le programme Tesseract sur ton ordi
+
+from PIL import Image          # Manipulation d'images (ouverture, rognage)
+import pytesseract             # Interface Python pour Tesseract OCR
+
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+# Chemin vers l'exécutable Tesseract-OCR sur Windows.
+# Cette configuration n'est nécessaire que si le chemin par défaut est incorrect.
 if platform.system() == "Windows":
     pytesseract.pytesseract.tesseract_cmd = (
         r"C:\Program Files\Tesseract-OCR\tesseract.exe"
     )
 
 
-# ============================================================
-# FONCTION PRINCIPALE : ANALYSER UN COMBAT
-# ============================================================
-def analyser_combat(image_paths, players_nocta):
+def analyser_combat(
+    image_paths: list[str],
+    players_nocta: list[str]
+) -> tuple[list[str], list[str], str | None]:
+    if len(image_paths) not in (1, 2):
+        print("erreur : analyser_combat attend 1 ou 2 screenshots")
+        return [], [], None
     """
-    Analyse les screenshots d'un combat Dofus et extrait :
-    - La liste des gagnants
-    - La liste des perdants
-    - Le résultat (Victoire ou Défaite pour Noctarium)
-    
+    Analyse les screenshots d'un combat Dofus et extrait les résultats.
+
+    Le premier screenshot contient à la fois les gagnants (haut) et les perdants
+    (bas). Un deuxième screenshot optionnel peut fournir une liste complémentaire
+    de perdants.
+
     Paramètres :
-      - image_paths : liste des chemins vers les images (2 screenshots)
-      - players_nocta : liste des joueurs de Noctarium pour comparer
-    
+        image_paths   : liste des chemins vers les images (1 ou 2 screenshots).
+        players_nocta : liste des noms des joueurs de l'alliance "Noctarium".
+
     Retourne :
-      - gagnants : liste des noms de joueurs gagnants
-      - perdants : liste des noms de joueurs perdants
-      - resultat : "Victoire", "Défaite" ou None
+        Un tuple (gagnants, perdants_total, resultat) où :
+            - gagnants      : liste des noms de joueurs gagnants.
+            - perdants_total: liste consolidée de tous les perdants.
+            - resultat      : "Victoire", "Défaite" ou None si indéterminé.
+
+    Exemple d'utilisation :
+        >>> gagnants, perdants, res = analyser_combat(
+        ...     ["screen1.png", "screen2.png"],
+        ...     ["JoueurA", "JoueurB"]
+        ... )
     """
 
     # ============================================================
     # PARTIE 1 : ANALYSE DU 2ÈME SCREENSHOT (PERDANTS)
     # ============================================================
-    
-    perdants_2 = []  # Liste vide pour stocker les perdants du screen 2
-    
-    if len(image_paths) == 2:  # Si on a bien 2 images (sinon on saute cette partie)
-        
-        # Ouvre la deuxième image (index 1 car Python compte à partir de 0)
+
+    perdants_2: list[str] = []
+
+    if len(image_paths) == 2:
         image = Image.open(image_paths[1])
-        
-        # "Rogner" l'image : ne garder que la zone où sont les noms des perdants
-        # Les coordonnées (90, 580, 300, 829) définissent un rectangle dans l'image
-        # (x_gauche, y_haut, x_droite, y_bas)
+
+        # Zone de rognage : coordonnées (x_gauche, y_haut, x_droite, y_bas)
         zone_noms = image.crop((90, 580, 300, 829))
 
-        # Extrait le texte de la zone rogée avec Tesseract OCR
         text = pytesseract.image_to_string(
             zone_noms,
-            lang="fra+eng",  # Le OCR doit lire en français ET anglais
-            config="--psm 6"  # Configuration du mode de lecture (bloc uniforme)
+            lang="fra+eng",       # OCR en français ET anglais
+            config="--psm 6"      # Mode : bloc de texte uniforme
         )
 
-        # Découpe le texte en lignes et enlève les lignes vides
         lines = [line.strip() for line in text.splitlines() if line.strip()]
-        
-        # Cherche la position des mots "personnage" dans le texte
-        HEADERS = []  # Liste vide pour stocker les numéros de ligne des headers
-        
-        for number, line in enumerate(lines):
-            # enumerate() donne à la fois l'index (number) et le contenu (line)
-            if "personnage" in line.lower() or "personage" in line.lower():  # .lower() met tout en minuscule pour comparer
-                HEADERS.append(number)  # Ajoute le numéro de ligne où on trouve "personnage"
 
-        # Si on a trouvé des headers, on extrait les noms après le premier header
-        if HEADERS:
-            perdants_2 = lines[HEADERS[0] + 1:]  # Prend tout après la première occurrence
+        headers: list[int] = []
+
+        for number, line in enumerate(lines):
+            if "personnage" in line.lower() or "personage" in line.lower():
+                headers.append(number)
+
+        if headers:
+            perdants_2 = lines[headers[0] + 1:]
         else:
-            print("erreur OCR : headere du screen 2 introuvable")
+            print("erreur OCR : header du screen 2 introuvable")
 
     # ============================================================
     # PARTIE 2 : ANALYSE DU PREMIER SCREENSHOT (GAGNANTS + PERDANTS)
     # ============================================================
-    
-    image = Image.open(image_paths[0])  # Ouvre le premier screenshot
-    
-    # On rogne la zone où se trouvent les noms (gagnants en haut, perdants en bas)
+
+    image = Image.open(image_paths[0])
     zone_noms = image.crop((90, 145, 300, 829))
 
     text = pytesseract.image_to_string(
@@ -86,33 +105,26 @@ def analyser_combat(image_paths, players_nocta):
         config="--psm 6"
     )
 
-    # Même traitement : on sépare le texte en lignes non vides
     lines = [line.strip() for line in text.splitlines() if line.strip()]
 
-    HEADERS = []  # On va chercher les deux headers "personnage" (un pour gagnants, un pour perdants)
-    
+    headers: list[int] = []
+
     for number, line in enumerate(lines):
         if "personnage" in line.lower() or "personage" in line.lower():
-            HEADERS.append(number)
+            headers.append(number)
 
-  
     # ============================================================
     # VALIDATION DU RÉSULTAT OCR
     # ============================================================
-    
-    # On vérifie que le résultat est cohérent :
-    # - Il doit y avoir exactement 2 headers ("personnage")
-    # - Ils doivent être séparés d'au moins 2 lignes (sinon c'est un bug de lecture)
-    # - Il doit y avoir du texte après le deuxième header
+
     ocr_valide = (
-        len(HEADERS) == 2                    # On a bien trouvé 2 headers
-        and HEADERS[1] - HEADERS[0] > 2     # Ils sont suffisamment éloignés
-        and len(lines) > HEADERS[1] + 1     # Il y a du contenu après le 2ème header
+        len(headers) == 2                    # Deux headers trouvés
+        and headers[1] - headers[0] > 2      # Séparation suffisante
+        and len(lines) > headers[1] + 1      # Contenu après le 2e header
     )
 
-    # Si le résultat n'est pas valide, on essaie une zone de rognage différente
     if not ocr_valide:
-        # On rogne plus petit (jusqu'à y=600 au lieu de 829) pour éviter les zones parasites
+        # Tentative avec une zone de rognage réduite pour éviter les parasites
         zone_noms = image.crop((90, 145, 300, 600))
 
         text = pytesseract.image_to_string(
@@ -123,68 +135,69 @@ def analyser_combat(image_paths, players_nocta):
 
         lines = [line.strip() for line in text.splitlines() if line.strip()]
 
-        HEADERS = []
+        headers = []
 
         for number, line in enumerate(lines):
-            if "personnage" in line.lower() or "peresonage" in line.lower():
-                HEADERS.append(number)
+            if "personnage" in line.lower() or "personnage" in line.lower():
+                headers.append(number)
 
-        # On re-vérifie si le nouveau résultat est valide
         ocr_valide = (
-            len(HEADERS) == 2
-            and HEADERS[1] - HEADERS[0] > 2
-            and len(lines) > HEADERS[1] + 1
+            len(headers) == 2
+            and headers[1] - headers[0] > 2
+            and len(lines) > headers[1] + 1
         )
 
-        # Si ça échoue encore, on arrête et on retourne des valeurs vides
         if not ocr_valide:
             print("erreur OCR : impossible d'extraire les joueurs (screen 1)")
-            return [], [], None  # Retourne listes vides et resultat None
+            return [], [], None
 
     # ============================================================
     # EXTRACTION DES NOMS DE JOUEURS
     # ============================================================
-    
-    # Les perdants du screen 1 sont après le deuxième header
-    perdants_1 = lines[HEADERS[1] + 1:]
-    
-    # Les gagnants sont entre le premier et le deuxième header
-    gagnants = lines[HEADERS[0] + 1 : HEADERS[1] - 1]
-    # Note : HEADERS[1] - 1 car on ne veut pas inclure la ligne "personnage" suivante
+
+    perdants_1 = lines[headers[1] + 1:]
+    gagnants = lines[headers[0] + 1 : headers[1] - 1]
 
     # ============================================================
     # COMPILATION DES PERDANTS (SCREEN 1 + SCREEN 2)
     # ============================================================
-    
-    perdants_total = []  # Liste qui va contenir tous les perdants des deux screens
-    
+
+    perdants_total: list[str] = []
+
     for perdant in perdants_1:
-        if perdant not in perdants_total:  # On évite les doublons
+        if perdant not in perdants_total:
+            perdants_total.append(perdant)
+
+    for perdant in perdants_2:
+        if perdant not in perdants_total:
             perdants_total.append(perdant)
 
     # ============================================================
     # DÉTERMINATION DU RÉSULTAT POUR NOCTARIUM
     # ============================================================
- 
 
-    resultat = None  # Par défaut, on ne sait pas encore
+    resultat: str | None = None
 
-    # Si un joueur de Noctarium est dans la liste des perdants → Défaite
-    for perdant in perdants_2:
-        if perdant not in perdants_total:  # On évite les doublons avec screen 1
-            perdants_total.append(perdant)
+    nocta_gagnant = any(
+    player in gagnants
+    for player in players_nocta
+    )
 
-    for player in players_nocta:
-        if player in perdants_total:
-            resultat = "Défaite"
-    
-    # Si un joueur de Noctarium est dans la liste des gagnants → Victoire
-    for player in players_nocta:
-        if player in gagnants:
-            resultat = "Victoire"
+    nocta_perdant = any(
+        player in perdants_total
+        for player in players_nocta
+    )
 
-    # ============================================================
-    # RETOUR DES RÉSULTATS
-    # ============================================================
-    
+    if nocta_gagnant and not nocta_perdant:
+        resultat = "Victoire"
+
+    elif nocta_perdant and not nocta_gagnant:
+        resultat = "Défaite"
+
+    else:
+        resultat = None
+        # ============================================================
+        # RETOUR DES RÉSULTATS
+        # ============================================================
+
     return gagnants, perdants_total, resultat
